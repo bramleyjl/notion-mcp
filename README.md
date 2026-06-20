@@ -36,15 +36,26 @@ Get a token at [notion.so/my-integrations](https://www.notion.so/my-integrations
 
 ### Running
 
+Intended to run as a persistent HTTP server on the home server (pangolin), so it's always available to Claude CLI and other MCP clients on the network.
+
 ```bash
-notion-mcp
+notion-mcp --transport http --port 8766
 ```
 
-Or as a background service — see `deploy/` for systemd unit examples.
+See `deploy/` for systemd unit examples.
 
 ## MCP Config
 
-Add to `~/.claude/settings.json` under `mcpServers`:
+**Primary (HTTP — pangolin):** add to `~/.claude/settings.json`:
+
+```json
+"notion-mcp": {
+  "type": "http",
+  "url": "http://192.168.0.102:8766/mcp"
+}
+```
+
+**Local fallback** (if pangolin is unavailable):
 
 ```json
 "notion-mcp": {
