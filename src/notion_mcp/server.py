@@ -1,4 +1,5 @@
 from mcp.server.fastmcp import FastMCP
+from .tools.pages import get_page, update_page_properties
 from .tools.tasks import create_task, get_tasks, update_task_status
 
 mcp = FastMCP("notion-mcp")
@@ -20,6 +21,27 @@ async def notion_get_tasks(status: str | None = None) -> list:
 async def notion_update_task_status(task_id: str, status: str) -> dict:
     """Move a Notion task to a new kanban status."""
     return await update_task_status(task_id, status)
+
+
+@mcp.tool()
+async def notion_get_page(page_id: str) -> dict:
+    """Get a Notion page's properties and metadata by ID."""
+    return await get_page(page_id)
+
+
+@mcp.tool()
+async def notion_update_page_properties(page_id: str, properties: dict) -> dict:
+    """
+    Update properties on a Notion page. `properties` must use the Notion API property format.
+
+    Examples:
+      Title field:    {"Name": {"title": [{"text": {"content": "value"}}]}}
+      Rich text:      {"Summary": {"rich_text": [{"text": {"content": "value"}}]}}
+      Select:         {"Status": {"select": {"name": "Active"}}}
+      URL:            {"Link": {"url": "https://..."}}
+      Checkbox:       {"Done": {"checkbox": true}}
+    """
+    return await update_page_properties(page_id, properties)
 
 
 def main():
