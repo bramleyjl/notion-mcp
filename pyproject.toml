@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "notion-mcp"
+version = "0.1.0"
+description = "Personal Notion MCP server with domain-specific tools for task and workspace management"
+requires-python = ">=3.12"
+dependencies = [
+    "mcp[cli]>=1.0.0",
+    "httpx>=0.28.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+notion-mcp = "notion_mcp.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/notion_mcp"]
