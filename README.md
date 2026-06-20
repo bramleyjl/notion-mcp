@@ -51,7 +51,7 @@ See `deploy/` for systemd unit examples.
 ```json
 "notion-mcp": {
   "type": "http",
-  "url": "http://192.168.0.102:8766/mcp"
+  "url": "http://YOUR_SERVER_IP:8766/mcp"
 }
 ```
 
