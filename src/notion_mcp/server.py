@@ -1,8 +1,14 @@
+import os
+
 from mcp.server.fastmcp import FastMCP
 from .tools.pages import get_page, update_page_properties
 from .tools.tasks import create_task, get_tasks, update_task_status
 
-mcp = FastMCP("notion-mcp")
+mcp = FastMCP(
+    "notion-mcp",
+    host=os.getenv("MCP_HOST", "127.0.0.1"),
+    port=int(os.getenv("MCP_PORT", "8766")),
+)
 
 
 @mcp.tool()
@@ -45,7 +51,8 @@ async def notion_update_page_properties(page_id: str, properties: dict) -> dict:
 
 
 def main():
-    mcp.run()
+    transport = os.getenv("MCP_TRANSPORT", "stdio")
+    mcp.run(transport=transport)  # type: ignore[arg-type]
 
 
 if __name__ == "__main__":
