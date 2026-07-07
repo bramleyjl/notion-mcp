@@ -29,3 +29,10 @@ async def patch(path: str, body: dict) -> dict:
         response = await client.patch(f"{NOTION_API_BASE}{path}", headers=_headers(), json=body)
         response.raise_for_status()
         return response.json()
+
+
+async def delete(path: str) -> dict:
+    async with httpx.AsyncClient() as client:
+        response = await client.delete(f"{NOTION_API_BASE}{path}", headers=_headers())
+        response.raise_for_status()
+        return response.json()

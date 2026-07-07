@@ -9,6 +9,10 @@ Personal Notion MCP server with domain-specific tools for task management and wo
 | `notion_create_task` | Create a task in the Task List kanban board |
 | `notion_get_tasks` | Query tasks, optionally filtered by status |
 | `notion_update_task_status` | Move a task to a new kanban column |
+| `notion_get_page` | Get a page's properties and metadata |
+| `notion_update_page_properties` | Update properties on a page |
+| `notion_get_page_body` | Get a page's body content (blocks), converted to markdown |
+| `notion_update_page_body` | Replace a page's body content from markdown (full replace) |
 
 ## Setup
 

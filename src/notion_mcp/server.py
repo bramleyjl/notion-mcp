@@ -3,6 +3,7 @@ import os
 from mcp.server.fastmcp import FastMCP
 from .tools.pages import get_page, update_page_properties
 from .tools.tasks import create_task, get_tasks, update_task_status
+from .tools.blocks import get_page_body, update_page_body
 
 mcp = FastMCP(
     "notion-mcp",
@@ -48,6 +49,25 @@ async def notion_update_page_properties(page_id: str, properties: dict) -> dict:
       Checkbox:       {"Done": {"checkbox": true}}
     """
     return await update_page_properties(page_id, properties)
+
+
+@mcp.tool()
+async def notion_get_page_body(page_id: str) -> dict:
+    """Get a Notion page's body content (blocks below the properties), converted to markdown."""
+    return await get_page_body(page_id)
+
+
+@mcp.tool()
+async def notion_update_page_body(page_id: str, markdown: str) -> dict:
+    """
+    Replace a Notion page's body content with the given markdown.
+
+    This performs a full replace: all existing blocks under the page are deleted and
+    replaced with blocks parsed from `markdown`. Supports headings (#, ##, ###),
+    paragraphs, bulleted/numbered lists, to-do items (- [ ] / - [x]), blockquotes (>),
+    code fences (```), dividers (---), and inline **bold**/*italic*/`code`.
+    """
+    return await update_page_body(page_id, markdown)
 
 
 def main():
