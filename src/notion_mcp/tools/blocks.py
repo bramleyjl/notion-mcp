@@ -2,8 +2,11 @@ import re
 
 from ..client import get, patch, delete
 
+# Notion caps each rich_text segment's text.content at 2000 characters.
+_MAX_RICH_TEXT_LEN = 2000
 
-def _text(content: str, bold: bool = False, italic: bool = False, code: bool = False) -> dict:
+
+def _text_segment(content: str, bold: bool = False, italic: bool = False, code: bool = False) -> dict:
     return {
         "type": "text",
         "text": {"content": content},
@@ -18,6 +21,15 @@ def _text(content: str, bold: bool = False, italic: bool = False, code: bool = F
     }
 
 
+def _text_chunks(content: str, bold: bool = False, italic: bool = False, code: bool = False) -> list[dict]:
+    if not content:
+        return [_text_segment("", bold, italic, code)]
+    return [
+        _text_segment(content[i : i + _MAX_RICH_TEXT_LEN], bold, italic, code)
+        for i in range(0, len(content), _MAX_RICH_TEXT_LEN)
+    ]
+
+
 def _parse_inline(text: str) -> list[dict]:
     parts = re.split(r"(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|_[^_]+_)", text)
     rich_text = []
@@ -25,13 +37,13 @@ def _parse_inline(text: str) -> list[dict]:
         if not part:
             continue
         if part.startswith("`") and part.endswith("`"):
-            rich_text.append(_text(part[1:-1], code=True))
+            rich_text.extend(_text_chunks(part[1:-1], code=True))
         elif part.startswith("**") and part.endswith("**"):
-            rich_text.append(_text(part[2:-2], bold=True))
+            rich_text.extend(_text_chunks(part[2:-2], bold=True))
         elif (part.startswith("*") and part.endswith("*")) or (part.startswith("_") and part.endswith("_")):
-            rich_text.append(_text(part[1:-1], italic=True))
+            rich_text.extend(_text_chunks(part[1:-1], italic=True))
         else:
-            rich_text.append(_text(part))
+            rich_text.extend(_text_chunks(part))
     return rich_text
 
 
@@ -65,7 +77,38 @@ def _divider() -> dict:
 
 
 def _code(text: str, language: str = "plain text") -> dict:
-    return {"object": "block", "type": "code", "code": {"rich_text": [_text(text)], "language": language}}
+    return {"object": "block", "type": "code", "code": {"rich_text": _text_chunks(text), "language": language}}
+
+
+_TABLE_ROW_RE = re.compile(r"^\|(.+)\|$")
+_TABLE_SEP_RE = re.compile(r"^\|?[\s:|-]+\|?$")
+
+
+def _split_table_row(line: str) -> list[str]:
+    line = line.strip()
+    if line.startswith("|"):
+        line = line[1:]
+    if line.endswith("|"):
+        line = line[:-1]
+    return [cell.strip() for cell in line.split("|")]
+
+
+def _table(rows: list[list[str]]) -> dict:
+    width = max(len(row) for row in rows)
+    normalized = [row + [""] * (width - len(row)) for row in rows]
+    return {
+        "object": "block",
+        "type": "table",
+        "table": {
+            "table_width": width,
+            "has_column_header": True,
+            "has_row_header": False,
+            "children": [
+                {"object": "block", "type": "table_row", "table_row": {"cells": [_parse_inline(cell) for cell in row]}}
+                for row in normalized
+            ],
+        },
+    }
 
 
 def markdown_to_blocks(markdown: str) -> list[dict]:
@@ -99,6 +142,20 @@ def markdown_to_blocks(markdown: str) -> list[dict]:
             flush_paragraph()
             blocks.append(_heading(len(heading_match.group(1)), heading_match.group(2)))
             i += 1
+            continue
+
+        if (
+            _TABLE_ROW_RE.match(stripped)
+            and i + 1 < len(lines)
+            and _TABLE_SEP_RE.match(lines[i + 1].strip())
+        ):
+            flush_paragraph()
+            rows = [_split_table_row(stripped)]
+            i += 2
+            while i < len(lines) and _TABLE_ROW_RE.match(lines[i].strip()):
+                rows.append(_split_table_row(lines[i].strip()))
+                i += 1
+            blocks.append(_table(rows))
             continue
 
         if stripped in ("---", "***", "___"):
@@ -188,6 +245,15 @@ def _block_to_markdown(block: dict) -> str | None:
         language = data.get("language", "")
         code_text = _rich_text_to_markdown(data.get("rich_text", []))
         return f"```{language}\n{code_text}\n```"
+    if block_type == "table":
+        rows = data.get("children", [])
+        lines = []
+        for idx, row in enumerate(rows):
+            cells = row.get("table_row", {}).get("cells", [])
+            lines.append("| " + " | ".join(_rich_text_to_markdown(cell) for cell in cells) + " |")
+            if idx == 0:
+                lines.append("| " + " | ".join(["---"] * len(cells)) + " |")
+        return "\n".join(lines)
     return None
 
 
@@ -238,17 +304,25 @@ async def _list_children(block_id: str) -> list[dict]:
 
 async def get_page_body(page_id: str) -> dict:
     children = await _list_children(page_id)
+    for block in children:
+        if block.get("type") == "table" and block.get("has_children"):
+            block["table"]["children"] = await _list_children(block["id"])
     return {"page_id": page_id, "markdown": blocks_to_markdown(children)}
 
 
 async def update_page_body(page_id: str, markdown: str) -> dict:
-    existing = await _list_children(page_id)
-    for block in existing:
-        await delete(f"/blocks/{block['id']}")
-
+    # Build and validate the new blocks locally before touching the page, then append
+    # them ahead of deleting the old ones. This avoids a moment where the page is empty
+    # (flicker) and means a failed append leaves the original content intact instead of
+    # a half-cleared page.
     new_blocks = markdown_to_blocks(markdown)
+    existing = await _list_children(page_id)
+
     for i in range(0, len(new_blocks), 100):
         chunk = new_blocks[i : i + 100]
         await patch(f"/blocks/{page_id}/children", {"children": chunk})
+
+    for block in existing:
+        await delete(f"/blocks/{block['id']}")
 
     return {"page_id": page_id, "block_count": len(new_blocks)}

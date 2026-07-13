@@ -62,10 +62,12 @@ async def notion_update_page_body(page_id: str, markdown: str) -> dict:
     """
     Replace a Notion page's body content with the given markdown.
 
-    This performs a full replace: all existing blocks under the page are deleted and
-    replaced with blocks parsed from `markdown`. Supports headings (#, ##, ###),
-    paragraphs, bulleted/numbered lists, to-do items (- [ ] / - [x]), blockquotes (>),
-    code fences (```), dividers (---), and inline **bold**/*italic*/`code`.
+    This performs a full replace: blocks parsed from `markdown` are appended first,
+    then the page's prior blocks are deleted (append-before-delete, so a failure never
+    leaves the page emptier than before). Supports headings (#, ##, ###), paragraphs,
+    bulleted/numbered lists, to-do items (- [ ] / - [x]), blockquotes (>), code fences
+    (```), dividers (---), GFM-style tables (| ... | header + | --- | separator rows),
+    and inline **bold**/*italic*/`code`.
     """
     return await update_page_body(page_id, markdown)
 
