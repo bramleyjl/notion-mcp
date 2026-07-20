@@ -3,7 +3,7 @@
 ## Architecture
 
 - `client.py` — thin wrappers (`get`/`post`/`patch`/`delete`) around `httpx`, shared auth headers. All Notion API calls go through these.
-- `tools/*.py` — plain async functions doing the actual work (no MCP decorators here), one file per domain (`tasks.py`, `pages.py`, `blocks.py`).
+- `tools/*.py` — plain async functions doing the actual work (no MCP decorators here), one file per domain (`tasks.py`, `pages.py`, `blocks.py`). `tools/mentions.py` holds `resolve_page_title()`, shared by `tasks.py` and `blocks.py` to resolve page-mention rich_text to its live title (falling back to Notion's stale cached text, with the mentioned page's ID surfaced, when the page isn't shared with the integration).
 - `server.py` — registers each `tools/` function as an `@mcp.tool()`-decorated wrapper with a docstring; this is the only place that imports `FastMCP`.
 
 Keep new tools following this three-layer split: client → tools function → server registration.

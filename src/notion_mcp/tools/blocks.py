@@ -1,6 +1,7 @@
 import re
 
 from ..client import get, patch, delete
+from .mentions import resolve_page_title
 
 # Notion caps each rich_text segment's text.content at 2000 characters.
 _MAX_RICH_TEXT_LEN = 2000
@@ -204,10 +205,14 @@ def markdown_to_blocks(markdown: str) -> list[dict]:
     return blocks
 
 
-def _rich_text_to_markdown(rich_text: list[dict]) -> str:
+async def _rich_text_to_markdown(rich_text: list[dict], mention_cache: dict[str, str | None]) -> str:
     parts = []
     for rt in rich_text:
         content = rt.get("plain_text", rt.get("text", {}).get("content", ""))
+        mention = rt.get("mention") if rt.get("type") == "mention" else None
+        if mention and mention.get("type") == "page":
+            resolved = await resolve_page_title(mention["page"]["id"], mention_cache)
+            content = resolved if resolved is not None else f"{content} (unresolved mention: {mention['page']['id']})"
         annotations = rt.get("annotations", {})
         if annotations.get("code"):
             content = f"`{content}`"
@@ -221,42 +226,43 @@ def _rich_text_to_markdown(rich_text: list[dict]) -> str:
     return "".join(parts)
 
 
-def _block_to_markdown(block: dict) -> str | None:
+async def _block_to_markdown(block: dict, mention_cache: dict[str, str | None]) -> str | None:
     block_type = block.get("type")
     data = block.get(block_type, {})
 
     if block_type == "paragraph":
-        return _rich_text_to_markdown(data.get("rich_text", []))
+        return await _rich_text_to_markdown(data.get("rich_text", []), mention_cache)
     if block_type in ("heading_1", "heading_2", "heading_3"):
         level = int(block_type[-1])
-        return f"{'#' * level} {_rich_text_to_markdown(data.get('rich_text', []))}"
+        return f"{'#' * level} {await _rich_text_to_markdown(data.get('rich_text', []), mention_cache)}"
     if block_type == "bulleted_list_item":
-        return f"- {_rich_text_to_markdown(data.get('rich_text', []))}"
+        return f"- {await _rich_text_to_markdown(data.get('rich_text', []), mention_cache)}"
     if block_type == "numbered_list_item":
-        return f"1. {_rich_text_to_markdown(data.get('rich_text', []))}"
+        return f"1. {await _rich_text_to_markdown(data.get('rich_text', []), mention_cache)}"
     if block_type == "to_do":
         mark = "x" if data.get("checked") else " "
-        return f"- [{mark}] {_rich_text_to_markdown(data.get('rich_text', []))}"
+        return f"- [{mark}] {await _rich_text_to_markdown(data.get('rich_text', []), mention_cache)}"
     if block_type == "quote":
-        return f"> {_rich_text_to_markdown(data.get('rich_text', []))}"
+        return f"> {await _rich_text_to_markdown(data.get('rich_text', []), mention_cache)}"
     if block_type == "divider":
         return "---"
     if block_type == "code":
         language = data.get("language", "")
-        code_text = _rich_text_to_markdown(data.get("rich_text", []))
+        code_text = await _rich_text_to_markdown(data.get("rich_text", []), mention_cache)
         return f"```{language}\n{code_text}\n```"
     if block_type == "table":
         rows = data.get("children", [])
         lines = []
         for idx, row in enumerate(rows):
             cells = row.get("table_row", {}).get("cells", [])
-            lines.append("| " + " | ".join(_rich_text_to_markdown(cell) for cell in cells) + " |")
+            rendered_cells = [await _rich_text_to_markdown(cell, mention_cache) for cell in cells]
+            lines.append("| " + " | ".join(rendered_cells) + " |")
             if idx == 0:
                 lines.append("| " + " | ".join(["---"] * len(cells)) + " |")
         return "\n".join(lines)
     if block_type == "toggle":
-        summary = _rich_text_to_markdown(data.get("rich_text", []))
-        inner = blocks_to_markdown(data.get("children", []))
+        summary = await _rich_text_to_markdown(data.get("rich_text", []), mention_cache)
+        inner = await blocks_to_markdown(data.get("children", []), mention_cache)
         return f"<details>\n<summary>{summary}</summary>\n\n{inner}\n\n</details>"
     return None
 
@@ -269,7 +275,9 @@ def _indent(text: str, spaces: int = 2) -> str:
 _LIST_TYPES = {"bulleted_list_item", "numbered_list_item", "to_do"}
 
 
-def blocks_to_markdown(blocks: list[dict]) -> str:
+async def blocks_to_markdown(blocks: list[dict], mention_cache: dict[str, str | None] | None = None) -> str:
+    if mention_cache is None:
+        mention_cache = {}
     chunks = []
     numbered_count = 0
     prev_type = None
@@ -279,9 +287,9 @@ def blocks_to_markdown(blocks: list[dict]) -> str:
         if block_type == "numbered_list_item":
             numbered_count = numbered_count + 1 if prev_type == "numbered_list_item" else 1
             data = block.get(block_type, {})
-            md = f"{numbered_count}. {_rich_text_to_markdown(data.get('rich_text', []))}"
+            md = f"{numbered_count}. {await _rich_text_to_markdown(data.get('rich_text', []), mention_cache)}"
         else:
-            md = _block_to_markdown(block)
+            md = await _block_to_markdown(block, mention_cache)
 
         if md is None:
             prev_type = block_type
@@ -290,7 +298,7 @@ def blocks_to_markdown(blocks: list[dict]) -> str:
         if block_type not in ("table", "toggle"):
             nested = block.get(block_type, {}).get("children")
             if nested:
-                md = md + "\n" + _indent(blocks_to_markdown(nested))
+                md = md + "\n" + _indent(await blocks_to_markdown(nested, mention_cache))
 
         separator = "\n" if block_type in _LIST_TYPES and prev_type in _LIST_TYPES else "\n\n"
         if chunks:
@@ -326,7 +334,7 @@ async def _expand_children(blocks: list[dict]) -> list[dict]:
 
 async def get_page_body(page_id: str) -> dict:
     children = await _expand_children(await _list_children(page_id))
-    return {"page_id": page_id, "markdown": blocks_to_markdown(children)}
+    return {"page_id": page_id, "markdown": await blocks_to_markdown(children)}
 
 
 async def update_page_body(page_id: str, markdown: str) -> dict:

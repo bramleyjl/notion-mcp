@@ -1,12 +1,6 @@
-from ..client import get, post, patch, NotionAPIError
+from ..client import post, patch
 from ..config import TASK_LIST_DB_ID, TASK_TEMPLATE_ID, TASK_STATUSES
-
-
-def _page_title(page: dict) -> str:
-    for prop in page.get("properties", {}).values():
-        if prop.get("type") == "title":
-            return "".join(p["plain_text"] for p in prop.get("title", []))
-    return ""
+from .mentions import resolve_page_title
 
 
 async def _resolve_name(title_parts: list[dict], page_title_cache: dict[str, str | None]) -> dict:
@@ -19,13 +13,7 @@ async def _resolve_name(title_parts: list[dict], page_title_cache: dict[str, str
             segments.append(part["plain_text"])
             continue
 
-        if page_id not in page_title_cache:
-            try:
-                page_title_cache[page_id] = _page_title(await get(f"/pages/{page_id}"))
-            except NotionAPIError:
-                page_title_cache[page_id] = None
-
-        resolved = page_title_cache[page_id]
+        resolved = await resolve_page_title(page_id, page_title_cache)
         if resolved is None:
             unresolved_page_id = page_id
             segments.append(part["plain_text"])

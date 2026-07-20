@@ -59,7 +59,10 @@ async def notion_get_page_body(page_id: str) -> dict:
     Recursively expands nested children (toggles, sub-lists, table rows), so toggle-heavy
     pages return full content, not just top-level structure. Toggles render as
     <details><summary>...</summary>...</details>; other nested blocks render indented
-    beneath their parent line.
+    beneath their parent line. Page mentions resolve to the mentioned page's live title
+    (not Notion's stale cached mention text); if the mentioned page isn't shared with the
+    integration, falls back to the stale text with "(unresolved mention: <page_id>)"
+    appended so it's not silently misleading.
     """
     return await get_page_body(page_id)
 
