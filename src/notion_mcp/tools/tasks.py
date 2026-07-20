@@ -19,7 +19,7 @@ async def create_task(name: str, status: str = "To Do", url: str | None = None) 
 
 
 async def get_tasks(status: str | None = None) -> list[dict]:
-    body: dict = {"database_id": TASK_LIST_DB_ID, "page_size": 100}
+    body: dict = {"page_size": 100}
     if status:
         body["filter"] = {"property": "Status", "select": {"equals": status}}
 
