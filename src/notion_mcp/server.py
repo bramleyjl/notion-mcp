@@ -53,7 +53,14 @@ async def notion_update_page_properties(page_id: str, properties: dict) -> dict:
 
 @mcp.tool()
 async def notion_get_page_body(page_id: str) -> dict:
-    """Get a Notion page's body content (blocks below the properties), converted to markdown."""
+    """
+    Get a Notion page's body content (blocks below the properties), converted to markdown.
+
+    Recursively expands nested children (toggles, sub-lists, table rows), so toggle-heavy
+    pages return full content, not just top-level structure. Toggles render as
+    <details><summary>...</summary>...</details>; other nested blocks render indented
+    beneath their parent line.
+    """
     return await get_page_body(page_id)
 
 

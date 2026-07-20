@@ -254,7 +254,16 @@ def _block_to_markdown(block: dict) -> str | None:
             if idx == 0:
                 lines.append("| " + " | ".join(["---"] * len(cells)) + " |")
         return "\n".join(lines)
+    if block_type == "toggle":
+        summary = _rich_text_to_markdown(data.get("rich_text", []))
+        inner = blocks_to_markdown(data.get("children", []))
+        return f"<details>\n<summary>{summary}</summary>\n\n{inner}\n\n</details>"
     return None
+
+
+def _indent(text: str, spaces: int = 2) -> str:
+    prefix = " " * spaces
+    return "\n".join(prefix + line if line else line for line in text.split("\n"))
 
 
 _LIST_TYPES = {"bulleted_list_item", "numbered_list_item", "to_do"}
@@ -277,6 +286,11 @@ def blocks_to_markdown(blocks: list[dict]) -> str:
         if md is None:
             prev_type = block_type
             continue
+
+        if block_type not in ("table", "toggle"):
+            nested = block.get(block_type, {}).get("children")
+            if nested:
+                md = md + "\n" + _indent(blocks_to_markdown(nested))
 
         separator = "\n" if block_type in _LIST_TYPES and prev_type in _LIST_TYPES else "\n\n"
         if chunks:
@@ -302,11 +316,16 @@ async def _list_children(block_id: str) -> list[dict]:
     return children
 
 
+async def _expand_children(blocks: list[dict]) -> list[dict]:
+    for block in blocks:
+        if block.get("has_children"):
+            nested = await _list_children(block["id"])
+            block.setdefault(block["type"], {})["children"] = await _expand_children(nested)
+    return blocks
+
+
 async def get_page_body(page_id: str) -> dict:
-    children = await _list_children(page_id)
-    for block in children:
-        if block.get("type") == "table" and block.get("has_children"):
-            block["table"]["children"] = await _list_children(block["id"])
+    children = await _expand_children(await _list_children(page_id))
     return {"page_id": page_id, "markdown": blocks_to_markdown(children)}
 
 
