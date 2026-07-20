@@ -27,12 +27,13 @@ async def get_tasks(status: str | None = None) -> list[dict]:
     tasks = []
     for page in result.get("results", []):
         props = page["properties"]
-        title_parts = props.get("Name", {}).get("title", [])
+        title_parts = (props.get("Name") or {}).get("title", [])
+        select = (props.get("Status") or {}).get("select") or {}
         tasks.append({
             "id": page["id"],
             "url": page["url"],
             "name": "".join(p["plain_text"] for p in title_parts),
-            "status": props.get("Status", {}).get("select", {}).get("name"),
+            "status": select.get("name"),
         })
     return tasks
 
