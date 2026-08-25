@@ -1,5 +1,5 @@
 from ..client import post, patch
-from ..config import TASK_LIST_DB_ID, TASK_TEMPLATE_ID, TASK_STATUSES
+from ..config import TASK_LIST_DB_ID, TASK_STATUSES
 from .mentions import resolve_page_title
 
 
@@ -30,7 +30,6 @@ async def create_task(name: str, status: str = "To Do", url: str | None = None) 
 
     page = await post("/pages", {
         "parent": {"database_id": TASK_LIST_DB_ID},
-        "template_id": TASK_TEMPLATE_ID,
         "properties": {
             "Name": {"title": [{"text": {"content": name}}]},
             "Status": {"select": {"name": status}},
