@@ -116,15 +116,35 @@ def markdown_to_blocks(markdown: str) -> list[dict]:
     lines = markdown.split("\n")
     blocks: list[dict] = []
     paragraph_buffer: list[str] = []
+    # Stack of (indent, block) for list items currently open, outermost first.
+    # A list-type line nests under the last stack entry with a smaller indent.
+    list_stack: list[tuple[int, dict]] = []
 
     def flush_paragraph():
         if paragraph_buffer:
             blocks.append(_paragraph("\n".join(paragraph_buffer)))
             paragraph_buffer.clear()
+            list_stack.clear()
+
+    def add_list_block(block: dict, indent: int):
+        while list_stack and indent <= list_stack[-1][0]:
+            list_stack.pop()
+        if list_stack:
+            parent = list_stack[-1][1]
+            parent[parent["type"]].setdefault("children", []).append(block)
+        else:
+            blocks.append(block)
+        list_stack.append((indent, block))
+
+    def add_block(block: dict):
+        list_stack.clear()
+        blocks.append(block)
 
     i = 0
     while i < len(lines):
-        stripped = lines[i].strip()
+        raw_line = lines[i].expandtabs(4)
+        stripped = raw_line.strip()
+        indent = len(raw_line) - len(raw_line.lstrip(" "))
 
         if stripped.startswith("```"):
             flush_paragraph()
@@ -134,14 +154,14 @@ def markdown_to_blocks(markdown: str) -> list[dict]:
             while i < len(lines) and not lines[i].strip().startswith("```"):
                 code_lines.append(lines[i])
                 i += 1
-            blocks.append(_code("\n".join(code_lines), language))
+            add_block(_code("\n".join(code_lines), language))
             i += 1
             continue
 
         heading_match = re.match(r"^(#{1,3})\s+(.*)$", stripped)
         if heading_match:
             flush_paragraph()
-            blocks.append(_heading(len(heading_match.group(1)), heading_match.group(2)))
+            add_block(_heading(len(heading_match.group(1)), heading_match.group(2)))
             i += 1
             continue
 
@@ -156,40 +176,40 @@ def markdown_to_blocks(markdown: str) -> list[dict]:
             while i < len(lines) and _TABLE_ROW_RE.match(lines[i].strip()):
                 rows.append(_split_table_row(lines[i].strip()))
                 i += 1
-            blocks.append(_table(rows))
+            add_block(_table(rows))
             continue
 
         if stripped in ("---", "***", "___"):
             flush_paragraph()
-            blocks.append(_divider())
+            add_block(_divider())
             i += 1
             continue
 
         todo_match = re.match(r"^[-*]\s+\[([ xX])\]\s+(.*)$", stripped)
         if todo_match:
             flush_paragraph()
-            blocks.append(_todo(todo_match.group(2), todo_match.group(1).lower() == "x"))
+            add_list_block(_todo(todo_match.group(2), todo_match.group(1).lower() == "x"), indent)
             i += 1
             continue
 
         bullet_match = re.match(r"^[-*]\s+(.*)$", stripped)
         if bullet_match:
             flush_paragraph()
-            blocks.append(_bulleted(bullet_match.group(1)))
+            add_list_block(_bulleted(bullet_match.group(1)), indent)
             i += 1
             continue
 
         numbered_match = re.match(r"^\d+\.\s+(.*)$", stripped)
         if numbered_match:
             flush_paragraph()
-            blocks.append(_numbered(numbered_match.group(1)))
+            add_list_block(_numbered(numbered_match.group(1)), indent)
             i += 1
             continue
 
         quote_match = re.match(r"^>\s?(.*)$", stripped)
         if quote_match:
             flush_paragraph()
-            blocks.append(_quote(quote_match.group(1)))
+            add_block(_quote(quote_match.group(1)))
             i += 1
             continue
 
